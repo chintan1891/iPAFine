@@ -373,6 +373,34 @@
 	}
 }
 
+- (NSString *)injectApp:(NSString *)appPath frameworkPath:(NSString *)frameworkPath
+{
+    if (frameworkPath.length)
+    {
+        if ([[NSFileManager defaultManager] fileExistsAtPath:frameworkPath])
+        {
+            // Create Framework folder
+            [self doTask:@"/bin/mkdir" arguments:@[[appPath stringByAppendingPathComponent:@"Frameworks"]]];
+            
+            NSString *targetPath = [appPath stringByAppendingPathComponent:[NSString stringWithFormat:@"Frameworks/%@", [frameworkPath lastPathComponent]]];
+            if ([[NSFileManager defaultManager] fileExistsAtPath:targetPath])
+            {
+                [[NSFileManager defaultManager] removeItemAtPath:targetPath error:nil];
+            }
+            
+            NSString *result = [self doTask:@"/bin/cp" arguments:[NSArray arrayWithObjects:@"-r", frameworkPath, targetPath, nil]];
+            if (![[NSFileManager defaultManager] fileExistsAtPath:targetPath])
+            {
+                _error = [@"Failed to copy Framework file: " stringByAppendingString:result ? result : @""];
+            }
+            
+            return targetPath;
+        }
+    }
+    
+    return nil;
+}
+
 //
 - (void)provApp:(NSString *)appPath provPath:(NSString *)provPath
 {
@@ -391,6 +419,11 @@
 			_error = [@"Failed to copy provisioning file: " stringByAppendingString:result ?: @""];
 		}
 	}
+}
+
+- (void)signFramework:(NSString *)frameworkPath certName:(NSString *)certName
+{
+    [self doTask:@"/usr/bin/codesign" arguments:@[@"--force", @"--sign", certName, @"--preserve-metadata=identifier,entitlements", @"--timestamp=none", frameworkPath]];
 }
 
 //
@@ -496,6 +529,22 @@
 	// Provision
 	[self injectApp:appPath dylibPath:dylibPath];
 	if (_error) return;
+    
+    
+    // Framework
+    NSString *dyLibDirPath = [dylibPath stringByDeletingLastPathComponent];
+    NSArray *allFiles = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dyLibDirPath error:nil];
+    NSArray *frameworkFiles = [allFiles filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"self ENDSWITH '.framework'"]];
+    
+    for (NSString *frameworkPath in frameworkFiles) {
+        NSString *frameworkAbsolutePath = [dyLibDirPath stringByAppendingPathComponent:frameworkPath];
+        NSString *frameworkTargetPath = [self injectApp:appPath frameworkPath:frameworkAbsolutePath];
+        
+        if (frameworkTargetPath) {
+            [self signFramework:frameworkTargetPath certName:certName];
+        }
+        if (_error) return;
+    }
 
 	// Provision
 	[self provApp:appPath provPath:provPath];
