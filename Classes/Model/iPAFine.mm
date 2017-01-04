@@ -373,7 +373,7 @@
 	}
 }
 
-- (NSString *)injectApp:(NSString *)appPath frameworkPath:(NSString *)frameworkPath
+- (void)injectApp:(NSString *)appPath frameworkPath:(NSString *)frameworkPath
 {
     if (frameworkPath.length)
     {
@@ -393,12 +393,8 @@
             {
                 _error = [@"Failed to copy Framework file: " stringByAppendingString:result ? result : @""];
             }
-            
-            return targetPath;
         }
     }
-    
-    return nil;
 }
 
 //
@@ -423,7 +419,7 @@
 
 - (void)signFramework:(NSString *)frameworkPath certName:(NSString *)certName
 {
-    [self doTask:@"/usr/bin/codesign" arguments:@[@"--force", @"--sign", certName, @"--preserve-metadata=identifier,entitlements", @"--timestamp=none", frameworkPath]];
+    [self doTask:@"/usr/bin/codesign" arguments:@[@"--force", @"--sign", certName, frameworkPath]];
 }
 
 //
@@ -524,26 +520,35 @@
 	//if (_error) return;
 
 	// Rename
-	NSString *outPath = [self renameApp:appPath ipaPath:ipaPath];
-
+	//NSString *outPath = [self renameApp:appPath ipaPath:ipaPath];
+    NSString *ipaFileName = [NSString stringWithFormat:@"Resigned_%@", [ipaPath lastPathComponent]];
+    NSString *outPath = [[ipaPath stringByDeletingLastPathComponent] stringByAppendingPathComponent:ipaFileName];
+    //NSString *outPath = [self renameApp:appPath ipaPath:ipaPath];
+    
 	// Provision
 	[self injectApp:appPath dylibPath:dylibPath];
 	if (_error) return;
     
     
-    // Framework
+    // Copy dependent frameworks
     NSString *dyLibDirPath = [dylibPath stringByDeletingLastPathComponent];
     NSArray *allFiles = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:dyLibDirPath error:nil];
     NSArray *frameworkFiles = [allFiles filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"self ENDSWITH '.framework'"]];
     
     for (NSString *frameworkPath in frameworkFiles) {
         NSString *frameworkAbsolutePath = [dyLibDirPath stringByAppendingPathComponent:frameworkPath];
-        NSString *frameworkTargetPath = [self injectApp:appPath frameworkPath:frameworkAbsolutePath];
+        [self injectApp:appPath frameworkPath:frameworkAbsolutePath];
         
-        if (frameworkTargetPath) {
-            [self signFramework:frameworkTargetPath certName:certName];
-        }
         if (_error) return;
+    }
+    
+    // Sign All Frameworks & Dylibs
+    NSArray *allFilesInFrameworkDir = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:[appPath stringByAppendingPathComponent:@"Frameworks"] error:nil];
+    NSArray *frameworkFilesInApp = [allFilesInFrameworkDir filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"self ENDSWITH '.framework' or self ENDSWITH '.dylib'"]];
+    
+    for (NSString *frameworkPath in frameworkFilesInApp) {
+        NSString *frameworkAbsolutePath = [appPath stringByAppendingPathComponent:[NSString stringWithFormat:@"Frameworks/%@",frameworkPath]];
+        [self signFramework:frameworkAbsolutePath certName:certName];
     }
 
 	// Provision
@@ -555,7 +560,7 @@
 	if (_error) return;
 
 	// Remove origin
-	[[NSFileManager defaultManager] removeItemAtPath:ipaPath error:nil];
+	//[[NSFileManager defaultManager] removeItemAtPath:ipaPath error:nil];
 
 	// Zip
 	[self zipIPA:workPath outPath:outPath];
