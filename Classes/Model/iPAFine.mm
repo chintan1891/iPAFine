@@ -227,7 +227,7 @@
 
 		if ([[NSFileManager defaultManager] fileExistsAtPath:dylibPath])
 		{
-			dylibPath = [@"@executable_path" stringByAppendingPathComponent:[dylibPath lastPathComponent]];
+			dylibPath = [@"@executable_path/Frameworks" stringByAppendingPathComponent:[dylibPath lastPathComponent]];
 		}
 		const char *dylib = dylibPath.UTF8String;
 		struct dylib_command *p = (struct dylib_command *)buffer;
@@ -346,7 +346,13 @@
 	{
 		if ([[NSFileManager defaultManager] fileExistsAtPath:dylibPath])
 		{
-			NSString *targetPath = [appPath stringByAppendingPathComponent:[dylibPath lastPathComponent]];
+            NSString *frameworkDirPath = [appPath stringByAppendingPathComponent:@"Frameworks"];
+            if (![[NSFileManager defaultManager] fileExistsAtPath:frameworkDirPath])
+            {
+                [[NSFileManager defaultManager] createDirectoryAtPath:frameworkDirPath withIntermediateDirectories:YES attributes:nil error:nil];
+            }
+
+            NSString *targetPath = [frameworkDirPath stringByAppendingPathComponent:[dylibPath lastPathComponent]];
 			if ([[NSFileManager defaultManager] fileExistsAtPath:targetPath])
 			{
 				[[NSFileManager defaultManager] removeItemAtPath:targetPath error:nil];
